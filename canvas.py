@@ -41,6 +41,14 @@ class Canvas:
                 bbox=BBox(x1=-150, y1=0, x2=-5, y2=150),
                 action=self.toggle_flip,
             ),
+            "+": Zone(
+                bbox=BBox(x1=-100, y1=-100, x2=-5, y2=-5),
+                action=self.increase_pen_size,
+            ),
+            "-": Zone(
+                bbox=BBox(x1=-200, y1=-100, x2=-105, y2=-5),
+                action=self.decrease_pen_size,
+            ),
             **{
                 colour_name: Zone(
                     bbox=BBox(x1=(105, 100 * i), y1=-100, x2=(195, 100 * i), y2=-5),
@@ -57,6 +65,12 @@ class Canvas:
 
     def set_pen_size(self, size: int):
         self.pen_size = size
+
+    def increase_pen_size(self):
+        self.pen_size = min(50, self.pen_size + 5)
+
+    def decrease_pen_size(self):
+        self.pen_size = max(5, self.pen_size - 5)
 
     def set_pen_colour(self, colour: tuple):
         self.pen_colour = colour
@@ -228,6 +242,16 @@ class Canvas:
                 (255, 255, 255),
                 5,
                 tipLength=0.5,
+            )
+
+            cv2.putText(
+                overlay,
+                f"Pen Size: {self.pen_size}",
+                (overlay.shape[1] - 200, overlay.shape[0] - 120),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (255, 255, 255),
+                2,
             )
 
             frame = self.blit(frame, self.canvas, alpha=0.7)
