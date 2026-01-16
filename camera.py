@@ -24,13 +24,13 @@ class VideoCamera:
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
         # Higher saturation and value for vibrant colours only
-        min_saturation = 90
+        min_saturation = 100
 
-        min_green_value = 150
+        min_green_value = 100
 
         # Detect GREEN
-        lower_green = np.array([40, min_saturation, min_green_value])
-        upper_green = np.array([80, 255, 255])
+        lower_green = np.array([60, min_saturation, min_green_value])
+        upper_green = np.array([100, 255, 255])
         mask_green = cv2.inRange(hsv, lower_green, upper_green)
 
         contours_green, _ = cv2.findContours(

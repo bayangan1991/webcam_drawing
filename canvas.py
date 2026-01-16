@@ -166,98 +166,109 @@ class Canvas:
         blended = cv2.addWeighted(base_frame, 1 - alpha, layer, alpha, 0)
         return np.where(mask_3channel, blended, base_frame)
 
+    def get_frame(self):
+        frame, colour_coords = self.camera.get_frame(flip=self.camera_flip)
+        if frame is None:
+            return None
+
+        if (debug_mask := colour_coords.get("debug_mask")) is not None:
+            return debug_mask
+
+        overlay = np.zeros_like(frame)
+
+        # Initialise canvas and ui with same dimensions as frame
+        self.initialize_canvas(frame)
+        self.initialize_ui(frame)
+
+        cursor = None
+
+        # Draw on canvas when green is detected
+        if colour_coords["green"]:
+            x, y = colour_coords["green"]
+            cursor = ("green", x, y, (0, 255, 0))
+        else:
+            # Reset previous position when green is not detected
+            self.prev_green_pos = None
+            # Draw red circle if red is detected
+            if colour_coords["red"]:
+                x, y = colour_coords["red"]
+                cursor = ("red", x, y, (0, 0, 255))
+
+        if cursor:
+            mode, x, y, colour = cursor
+            zone = self.get_zone(x, y) if cursor else None
+            overlay = self.draw_circle(
+                overlay,
+                x,
+                y,
+                radius=self.pen_size,
+                color=colour,
+                thickness=3,
+                fill=self.pen_colour,
+            )
+
+            if not zone and mode == "green":
+                # Draw on canvas
+                if self.prev_green_pos is not None:
+                    # Draw line from previous position to current position
+
+                    cv2.line(
+                        self.canvas,
+                        self.prev_green_pos,
+                        (x, y),
+                        self.pen_colour,
+                        2 * self.pen_size,
+                    )
+                else:
+                    # Draw initial point
+                    cv2.circle(
+                        self.canvas,
+                        (x, y),
+                        self.pen_size,
+                        self.pen_colour,
+                        -1,
+                    )
+
+                self.prev_green_pos = (x, y)
+            elif zone and mode == "green":
+                if self.prev_green_pos is None:
+                    zone.action()
+                    self.prev_green_pos = (x, y)
+
+        # Draw an arrow over the active pen colour in the UI
+        active_i = 0 if self.pen_colour == (0, 0, 0) else self.active_pen_index + 1
+
+        cv2.arrowedLine(
+            overlay,
+            (50 + (100 * active_i), overlay.shape[0] - 145),
+            (50 + (100 * active_i), overlay.shape[0] - 110),
+            (255, 255, 255),
+            5,
+            tipLength=0.5,
+        )
+
+        cv2.putText(
+            overlay,
+            f"Pen Size: {self.pen_size}",
+            (overlay.shape[1] - 200, overlay.shape[0] - 120),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (255, 255, 255),
+            2,
+        )
+
+        frame = self.blit(frame, self.canvas, alpha=0.7)
+        frame = self.blit(frame, self.ui)
+        frame = self.blit(frame, overlay)
+
+        if frame is None:
+            return None
+
+        return frame
+
     def gen(self):
         while True:
-            frame, colour_coords = self.camera.get_frame(flip=self.camera_flip)
-            if frame is None:
-                continue
-            overlay = np.zeros_like(frame)
-
-            # Initialise canvas and ui with same dimensions as frame
-            self.initialize_canvas(frame)
-            self.initialize_ui(frame)
-
-            cursor = None
-
-            # Draw on canvas when green is detected
-            if colour_coords["green"]:
-                x, y = colour_coords["green"]
-                cursor = ("green", x, y, (0, 255, 0))
-            else:
-                # Reset previous position when green is not detected
-                self.prev_green_pos = None
-                # Draw red circle if red is detected
-                if colour_coords["red"]:
-                    x, y = colour_coords["red"]
-                    cursor = ("red", x, y, (0, 0, 255))
-
-            if cursor:
-                mode, x, y, colour = cursor
-                zone = self.get_zone(x, y) if cursor else None
-                overlay = self.draw_circle(
-                    overlay,
-                    x,
-                    y,
-                    radius=15,
-                    color=colour,
-                    thickness=3,
-                    fill=self.pen_colour,
-                )
-
-                if not zone and mode == "green":
-                    # Draw on canvas
-                    if self.prev_green_pos is not None:
-                        # Draw line from previous position to current position
-
-                        cv2.line(
-                            self.canvas,
-                            self.prev_green_pos,
-                            (x, y),
-                            self.pen_colour,
-                            2 * self.pen_size,
-                        )
-                    else:
-                        # Draw initial point
-                        cv2.circle(
-                            self.canvas,
-                            (x, y),
-                            self.pen_size,
-                            self.pen_colour,
-                            -1,
-                        )
-
-                    self.prev_green_pos = (x, y)
-                elif zone and mode == "green":
-                    if self.prev_green_pos is None:
-                        zone.action()
-                        self.prev_green_pos = (x, y)
-
-            # Draw an arrow over the active pen colour in the UI
-            active_i = 0 if self.pen_colour == (0, 0, 0) else self.active_pen_index + 1
-
-            cv2.arrowedLine(
-                overlay,
-                (50 + (100 * active_i), overlay.shape[0] - 145),
-                (50 + (100 * active_i), overlay.shape[0] - 110),
-                (255, 255, 255),
-                5,
-                tipLength=0.5,
-            )
-
-            cv2.putText(
-                overlay,
-                f"Pen Size: {self.pen_size}",
-                (overlay.shape[1] - 200, overlay.shape[0] - 120),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.7,
-                (255, 255, 255),
-                2,
-            )
-
-            frame = self.blit(frame, self.canvas, alpha=0.7)
-            frame = self.blit(frame, self.ui)
-            frame = self.blit(frame, overlay)
-
+            frame = self.get_frame()
             if frame is None:
                 continue
             encoded_frame = self.encode_frame(frame)
