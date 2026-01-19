@@ -10,11 +10,11 @@ game = Canvas(camera)
 
 
 @app.get("/")
-def feed(flip: bool | None = None) -> StreamingResponse:
+def feed(flip: bool | None = None, debug: bool = False) -> StreamingResponse:
     if flip is not None:
         game.camera_flip = flip
     game.clear_canvas()
     return StreamingResponse(
-        game.gen(),
+        game.gen(debug=debug),
         media_type="multipart/x-mixed-replace; boundary=frame",
     )

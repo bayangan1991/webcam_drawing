@@ -167,8 +167,8 @@ class Canvas:
         blended = cv2.addWeighted(base_frame, 1 - alpha, layer, alpha, 0)
         return np.where(mask_3channel, blended, base_frame)
 
-    def get_frame(self):
-        frame, colour_coords = self.camera.get_frame(flip=self.camera_flip)
+    def get_frame(self, debug: bool = False):
+        frame, colour_coords = self.camera.get_frame(flip=self.camera_flip, debug=debug)
         if frame is None:
             return None
 
@@ -267,9 +267,9 @@ class Canvas:
 
         return frame
 
-    def gen(self):
+    def gen(self, debug: bool = False):
         while True:
-            frame = self.get_frame()
+            frame = self.get_frame(debug=debug)
             if frame is None:
                 continue
             encoded_frame = self.encode_frame(frame)
