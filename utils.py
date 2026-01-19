@@ -19,7 +19,7 @@ class BBox:
             case float():
                 return int(size * coord)
             case tuple():
-                return sum(self.normalize_coord(c, size) for c in coord)
+                return self.normalize_coord(sum(c for c in coord), size)
             case _ if coord < 0:
                 return size + coord
             case _:

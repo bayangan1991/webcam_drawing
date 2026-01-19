@@ -12,6 +12,7 @@ class Canvas:
         self.camera = camera
         self.camera_flip = False
         self.canvas = None
+        self.starting_pen_pos = None
         self.prev_green_pos = None  # Track previous green position for drawing lines
         self.active_pen_index = 2
         self.pen_colours = [
@@ -28,6 +29,17 @@ class Canvas:
         ]
         self.pen_colour = self.pen_colours[self.active_pen_index][1]
         self.pen_size = 15
+
+        self.active_tool = "pen"
+        self.tools = [
+            "pen",
+            "line",
+            "rectangle",
+            "circle",
+            "filled rectangle",
+            "filled circle",
+        ]
+
         self.zones = {
             "Clear": Zone(
                 bbox=BBox(x1=0, y1=0, x2=150, y2=150),
@@ -43,20 +55,41 @@ class Canvas:
                 action=self.toggle_flip,
             ),
             "+": Zone(
-                bbox=BBox(x1=-100, y1=-100, x2=-5, y2=-5),
+                bbox=BBox(x1=-205, y1=-100, x2=-110, y2=-5),
                 action=self.increase_pen_size,
             ),
             "-": Zone(
-                bbox=BBox(x1=-200, y1=-100, x2=-105, y2=-5),
+                bbox=BBox(x1=-305, y1=-100, x2=-210, y2=-5),
                 action=self.decrease_pen_size,
+            ),
+            "Reset": Zone(
+                bbox=BBox(x1=-100, y1=-100, x2=-5, y2=-5),
+                action=partial(self.set_pen_size, size=15),
             ),
             **{
                 colour_name: Zone(
-                    bbox=BBox(x1=(105, 100 * i), y1=-100, x2=(195, 100 * i), y2=-5),
+                    bbox=BBox(
+                        x1=(105, 100 * i),
+                        y1=-100,
+                        x2=(195, 100 * i),
+                        y2=-5,
+                    ),
                     action=partial(self.set_pen_colour_by_name, name=colour_name),
                     colour=colour,
                 )
                 for i, (colour_name, colour) in enumerate(self.pen_colours)
+            },
+            **{
+                tool: Zone(
+                    bbox=BBox(
+                        x1=-100,
+                        y1=(-105, -100 * i),
+                        x2=-5,
+                        y2=(-195, -100 * i),
+                    ),
+                    action=partial(self.set_active_tool, name=tool),
+                )
+                for i, tool in enumerate(self.tools)
             },
         }
         self.ui = None
@@ -68,13 +101,17 @@ class Canvas:
         self.pen_size = size
 
     def increase_pen_size(self):
-        self.pen_size = min(50, self.pen_size + 5)
+        self.pen_size = min(150, self.pen_size + 2)
 
     def decrease_pen_size(self):
-        self.pen_size = max(5, self.pen_size - 5)
+        self.pen_size = max(1, self.pen_size - 2)
 
     def set_pen_colour(self, colour: tuple):
         self.pen_colour = colour
+
+    def set_active_tool(self, name: str):
+        if name in self.tools:
+            self.active_tool = name
 
     def set_pen_colour_by_name(self, name: str):
         for i, (colour_name, colour) in enumerate(self.pen_colours):
@@ -167,6 +204,63 @@ class Canvas:
         blended = cv2.addWeighted(base_frame, 1 - alpha, layer, alpha, 0)
         return np.where(mask_3channel, blended, base_frame)
 
+    def draw_tool_on_frame(self, frame, x, y, colour=None):
+        if colour is None:
+            colour = self.pen_colour
+
+        if self.active_tool == "line":
+            cv2.line(
+                frame,
+                self.starting_pen_pos,
+                (x, y),
+                colour,
+                2 * self.pen_size,
+            )
+        elif self.active_tool == "rectangle":
+            cv2.rectangle(
+                frame,
+                self.starting_pen_pos,
+                (x, y),
+                colour,
+                2 * self.pen_size,
+            )
+        elif self.active_tool == "filled rectangle":
+            cv2.rectangle(
+                frame,
+                self.starting_pen_pos,
+                (x, y),
+                colour,
+                -1,
+            )
+        elif self.active_tool == "circle":
+            radius = int(
+                np.hypot(
+                    x - self.starting_pen_pos[0],
+                    y - self.starting_pen_pos[1],
+                )
+            )
+            cv2.circle(
+                frame,
+                self.starting_pen_pos,
+                radius,
+                colour,
+                2 * self.pen_size,
+            )
+        elif self.active_tool == "filled circle":
+            radius = int(
+                np.hypot(
+                    x - self.starting_pen_pos[0],
+                    y - self.starting_pen_pos[1],
+                )
+            )
+            cv2.circle(
+                frame,
+                self.starting_pen_pos,
+                radius,
+                colour,
+                -1,
+            )
+
     def get_frame(self, debug: bool = False):
         frame, colour_coords = self.camera.get_frame(flip=self.camera_flip, debug=debug)
         if frame is None:
@@ -210,39 +304,70 @@ class Canvas:
 
             if not zone and mode == "green":
                 # Draw on canvas
-                if self.prev_green_pos is not None:
-                    # Draw line from previous position to current position
+                if self.active_tool == "pen":
+                    if self.prev_green_pos is not None:
+                        # Draw line from previous position to current position
 
-                    cv2.line(
-                        self.canvas,
-                        self.prev_green_pos,
-                        (x, y),
-                        self.pen_colour,
-                        2 * self.pen_size,
-                    )
+                        cv2.line(
+                            self.canvas,
+                            self.prev_green_pos,
+                            (x, y),
+                            self.pen_colour,
+                            2 * self.pen_size,
+                        )
+                    else:
+                        # Draw initial point
+                        cv2.circle(
+                            self.canvas,
+                            (x, y),
+                            self.pen_size,
+                            self.pen_colour,
+                            -1,
+                        )
                 else:
-                    # Draw initial point
-                    cv2.circle(
-                        self.canvas,
-                        (x, y),
-                        self.pen_size,
-                        self.pen_colour,
-                        -1,
-                    )
+                    if self.starting_pen_pos is None:
+                        self.starting_pen_pos = (x, y)
+                    if self.pen_colour == (0, 0, 0):
+                        self.draw_tool_on_frame(overlay, x, y, colour=(4, 4, 4))
+                    else:
+                        self.draw_tool_on_frame(overlay, x, y)
 
                 self.prev_green_pos = (x, y)
             elif zone and mode == "green":
                 if self.prev_green_pos is None:
                     zone.action()
                     self.prev_green_pos = (x, y)
+            elif mode == "red" and self.starting_pen_pos:
+                # Finalize shape drawing on canvas
+                self.draw_tool_on_frame(self.canvas, x, y)
+                self.starting_pen_pos = None
 
+        size_y, size_x = overlay.shape[0], overlay.shape[1]
         # Draw an arrow over the active pen colour in the UI
-        active_i = 0 if self.pen_colour == (0, 0, 0) else self.active_pen_index + 1
-
+        active_colour_index = (
+            0 if self.pen_colour == (0, 0, 0) else self.active_pen_index + 1
+        )
         cv2.arrowedLine(
             overlay,
-            (50 + (100 * active_i), overlay.shape[0] - 145),
-            (50 + (100 * active_i), overlay.shape[0] - 110),
+            (50 + (100 * active_colour_index), size_y - 145),
+            (50 + (100 * active_colour_index), size_y - 110),
+            (255, 255, 255),
+            5,
+            tipLength=0.5,
+        )
+
+        # Draw an arrow over the active tool in the UI
+        active_tool_index = self.tools.index(self.active_tool)
+        cv2.arrowedLine(
+            overlay,
+            (
+                size_x - 145,
+                size_y - (100 * (active_tool_index + 1)) - 50,
+            ),
+            (
+                size_x - 110,
+                size_y - (100 * (active_tool_index + 1)) - 50,
+            ),
             (255, 255, 255),
             5,
             tipLength=0.5,
@@ -251,7 +376,7 @@ class Canvas:
         cv2.putText(
             overlay,
             f"Pen Size: {self.pen_size}",
-            (overlay.shape[1] - 200, overlay.shape[0] - 120),
+            (size_x - 300, size_y - 120),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.7,
             (255, 255, 255),
